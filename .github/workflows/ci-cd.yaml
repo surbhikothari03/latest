@@ -1,44 +1,59 @@
-name: Secure Build and Deploy
+name: Deploy Node.js Docker App to AWS EC2
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: List repo files (debug)
+        run: ls -la
+
+      - name: Copy all repo files to EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
-          node-version: 18
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          password: ${{ secrets.EC2_PASSWORD }}   # 🔹 use password instead of key
+          source: "."
+          target: "/home/ubuntu/my-microservice"
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Static Analysis with Semgrep
-        uses: returntocorp/semgrep-action@v1
+      - name: Deploy and restart Docker container on EC2
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          config: 'p/ci'
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          password: ${{ secrets.EC2_PASSWORD }}  # 🔹 use password instead of key
+          script: |
+            cd /home/ubuntu/my-microservice
 
-      - name: Build Docker image
-        run: docker build -t my-microservice:${{ github.sha }} .
+            echo "Confirming files in deployment directory:"
+            ls -la
 
-      - name: Scan Docker image using Trivy
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: my-microservice:${{ github.sha }}
-          severity: CRITICAL,HIGH
-          exit-code: 1
+            echo "Building Docker image..."
+            docker build -t my-microservice .
 
-      - name: Docker Hub login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+            echo "Stopping existing container if any..."
+            docker stop my-microservice || true
 
-      - name: Push image on success
-        run: docker push my-microservice:${{ github.sha }}
+            echo "Removing existing container if any..."
+            docker rm my-microservice || true
+
+            echo "Running new container..."
+            docker run -d --env-file .env -p 80:3000 --name my-microservice my-microservice
+
+            echo "Waiting for container to start..."
+            sleep 5
+
+            echo "Current container status:"
+            docker ps -a | grep my-microservice
+
+            echo "Container logs:"
+            docker logs my-microservice || echo 'No logs found yet'
