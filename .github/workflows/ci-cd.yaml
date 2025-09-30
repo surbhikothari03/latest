@@ -46,7 +46,7 @@ jobs:
             echo "Removing existing container if any..."
             docker rm my-microservice || true
 
-            echo "Running new container..."
+            echo "Running new container....."
             docker run -d --env-file .env -p 80:3000 --name my-microservice my-microservice
 
             echo "Waiting for container to start..."
