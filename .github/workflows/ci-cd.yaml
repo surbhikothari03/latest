@@ -1,4 +1,4 @@
-name: Deploy Node.js Docker App to AWS EC2
+name: Deploy Docker to EC2
 
 on:
   push:
@@ -13,47 +13,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: List repo files (debug)
-        run: ls -la
+      # Optionally build/test, then build Docker image
+      - name: Build Docker image
+        run: docker build -t my-microservice .
 
-      - name: Copy all repo files to EC2
+      - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          password: ${{ secrets.EC2_PASSWORD }}   # 🔹 use password instead of key
+          key: ${{ secrets.EC2_SSH_KEY }}
           source: "."
-          target: "/home/ubuntu/my-microservice"
+          target: "~/deploy"
 
-      - name: Deploy and restart Docker container on EC2
+      - name: Execute Docker commands via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          password: ${{ secrets.EC2_PASSWORD }}  # 🔹 use password instead of key
+          key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/my-microservice
-
-            echo "Confirming files in deployment directory:"
-            ls -la
-
-            echo "Building Docker image..."
+            cd ~/deploy
             docker build -t my-microservice .
-
-            echo "Stopping existing container if any...."
             docker stop my-microservice || true
-
-            echo "Removing existing container if any..."
             docker rm my-microservice || true
-
-            echo "Running new container....."
             docker run -d --env-file .env -p 80:3000 --name my-microservice my-microservice
-
-            echo "Waiting for container to start..."
-            sleep 5
-
-            echo "Current container status:"
-            docker ps -a | grep my-microservice
-
-            echo "Container logs:"
-            docker logs my-microservice || echo 'No logs found yet'
