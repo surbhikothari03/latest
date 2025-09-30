@@ -40,7 +40,7 @@ jobs:
             echo "Building Docker image..."
             docker build -t my-microservice .
 
-            echo "Stopping existing container if any..."
+            echo "Stopping existing container if any...."
             docker stop my-microservice || true
 
             echo "Removing existing container if any..."
