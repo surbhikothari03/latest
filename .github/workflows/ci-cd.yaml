@@ -1,40 +1,44 @@
-name: Deploy Docker to EC2
+name: Secure Build and Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      # Optionally build/test, then build Docker image
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Static Analysis with Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: 'p/ci'
+
       - name: Build Docker image
-        run: docker build -t my-microservice .
+        run: docker build -t my-microservice:${{ github.sha }} .
 
-      - name: Copy files to EC2
-        uses: appleboy/scp-action@v0.1.7
+      - name: Scan docker image using Trivy
+        uses: aquasecurity/trivy-action@v0.10.5
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "~/deploy"
+          image-ref: my-microservice:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
 
-      - name: Execute Docker commands via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Dockerhub login
+        uses: docker/login-action@v2
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/deploy
-            docker build -t my-microservice .
-            docker stop my-microservice || true
-            docker rm my-microservice || true
-            docker run -d --env-file .env -p 80:3000 --name my-microservice my-microservice
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image on success
+        run: docker push my-microservice:${{ github.sha }}
